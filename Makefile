@@ -1,4 +1,4 @@
-PKG_REPO ?= https://github.com/mslxnu/pkg.git
+PKG_REPO ?= https://github.com/xnuports/pkg.git
 PORTS_REPO ?= https://github.com/freebsd/freebsd-ports.git
 PORTS_SPARSE ?= ports-mgmt/pkg ports-mgmt/pkg_cutleaves ports-mgmt/pkgs_which ports-mgmt/pkg_cleanup ports-mgmt/pkg_tree ports-mgmt/pkg-rmleaf
 PREFIX ?= /usr/local
