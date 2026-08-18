@@ -1,0 +1,11 @@
+--- a/ports-mgmt/pkg_cleanup/files/pkg_cleanup.c
++++ b/ports-mgmt/pkg_cleanup/files/pkg_cleanup.c
+@@ -255,7 +255,8 @@
+ 		add_item(line, p?p:"");
+ 	}
+-	if(WEXITSTATUS(pclose(pkg)) && menulen==0) {
++	int pkg_pclose = pclose(pkg);
++	if(WEXITSTATUS(pkg_pclose) && menulen==0) {
+ 		fputs("pkg returned an error.\n", stderr);
+ 		return -1;
+ 	}

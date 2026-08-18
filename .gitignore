@@ -1,0 +1,8 @@
+_build/
+pkg/
+freebsd-ports/
+.DS_Store
+*.o
+*.a
+*.dylib
+*.tmp
