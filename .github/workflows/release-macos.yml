@@ -1,0 +1,129 @@
+##
+# Copyright (c) 2024 xnuports
+#
+# SPDX-License-Identifier: BSD-2-Clause
+#
+# GitHub Actions workflow to build and release xnuports/pkg_utils for macOS
+#
+# Triggers on tag pushes (e.g. v1.0.0), builds for arm64 and x86_64,
+# creates .tar.xz archives, and uploads them as GitHub Release assets.
+
+name: release-macos
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build pkg_utils for ${{ matrix.target }}
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - aarch64-apple-darwin
+          - x86_64-apple-darwin
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          brew update --quiet || true
+          brew install libarchive openssl pkg-config dialog ncurses git
+
+          # Ensure pkg-config finds brew's libarchive
+          echo "PKG_CONFIG_PATH=$(brew --prefix libarchive)/lib/pkgconfig" >> "${GITHUB_ENV}"
+
+      - name: Setup build environment
+        run: |
+          echo "CC=clang" >> "${GITHUB_ENV}"
+          echo "PREFIX=${GITHUB_WORKSPACE}/install-${{ matrix.target }}" >> "${GITHUB_ENV}"
+          echo "NPROC=$(sysctl -n hw.ncpu 2>/dev/null || echo 4)" >> "${GITHUB_ENV}"
+
+      - name: Build pkg_utils
+        run: |
+          mkdir -p "${PREFIX}"
+
+          make all PREFIX="${PREFIX}" \
+            PKG_REPO="https://github.com/xnuports/pkg.git" \
+            PORTS_REPO="https://github.com/freebsd/freebsd-ports.git" \
+            BUILD_DIR="${GITHUB_WORKSPACE}/build-${{ matrix.target }}"
+
+      - name: Package binaries
+        run: |
+          # Map target to bootstrap arch name
+          case "${{ matrix.target }}" in
+            aarch64-apple-darwin) ARCH="arm64" ;;
+            x86_64-apple-darwin)  ARCH="x86_64" ;;
+          esac
+
+          # The build puts artifacts in _build/ relative to source
+          BUILD_DIR="${GITHUB_WORKSPACE}/build-${{ matrix.target }}"
+
+          # Create staging area
+          STAGE="${GITHUB_WORKSPACE}/stage-${ARCH}"
+          mkdir -p "${STAGE}/bin" "${STAGE}/share/man/man1"
+
+          # Copy binaries
+          cp "${BUILD_DIR}/bin/"* "${STAGE}/bin/" 2>/dev/null || true
+
+          # Copy man pages
+          cp "${BUILD_DIR}/share/man/man1/"* "${STAGE}/share/man/man1/" 2>/dev/null || true
+
+          # Create tarball matching pkg-bootstrap asset naming
+          tar -cJf "${GITHUB_WORKSPACE}/pkg_utils-Darwin-${ARCH}.tar.xz" \
+            -C "${STAGE}" .
+
+      - name: Generate checksums
+        run: |
+          cd "${GITHUB_WORKSPACE}"
+          shasum -a 256 pkg_utils-Darwin-*.tar.xz > pkg_utils-Darwin-checksums.sha256
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg_utils-macos-release
+          path: |
+            pkg_utils-Darwin-*.tar.xz
+            pkg_utils-Darwin-checksums.sha256
+          retention-days: 30
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release-assets
+
+          # Find and move all artifacts
+          find ./artifacts -type f | while read -r file; do
+            cp "$file" release-assets/
+          done
+
+          ls -la release-assets/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            release-assets/pkg_utils-Darwin-arm64.tar.xz
+            release-assets/pkg_utils-Darwin-x86_64.tar.xz
+            release-assets/pkg_utils-Darwin-checksums.sha256
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
